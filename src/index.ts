@@ -1,59 +1,55 @@
-import { Cache } from './Cache';
 import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { getHeaderCaseInsensitive } from './utils';
+import { AxiosETAGOptions } from './types';
+import { BaseCache } from './BaseCache';
 
 function isCacheableMethod(config: AxiosRequestConfig) {
   return ~['GET', 'HEAD'].indexOf(config.method.toUpperCase());
 }
 
-function getUUIDByAxiosConfig(config: AxiosRequestConfig) {
-  return config.url;
-}
-
-function getCacheByAxiosConfig(config: AxiosRequestConfig) {
-  return Cache.get(getUUIDByAxiosConfig(config));
-}
-
-function requestInterceptor(config: AxiosRequestConfig) {
-  if (isCacheableMethod(config)) {
-    const uuid = getUUIDByAxiosConfig(config);
-    const lastCachedResult = Cache.get(uuid);
-    if (lastCachedResult) {
-      config.headers = { ...config.headers, 'If-None-Match': lastCachedResult.etag };
-    }
+export default function axiosETAGCache(config?: AxiosRequestConfig, initialOptions?: AxiosETAGOptions) {
+  const options = initialOptions || {} as AxiosETAGOptions;
+  if (!options.cache) {
+    options.cache = new BaseCache();
   }
-  return config;
-}
 
-function responseInterceptor(response: AxiosResponse) {
-  if (isCacheableMethod(response.config)) {
-    const responseETAG = getHeaderCaseInsensitive('etag', response.headers);
-    if (responseETAG) {
-      Cache.set(getUUIDByAxiosConfig(response.config), responseETAG, response.data);
+  const getUUIDByAxiosConfig = (config: AxiosRequestConfig) => config.url;
+
+  const requestInterceptor = (config: AxiosRequestConfig) => {
+    if (isCacheableMethod(config)) {
+      const uuid = getUUIDByAxiosConfig(config);
+      const lastCachedResult = options.cache.get(uuid);
+      if (lastCachedResult) {
+        config.headers = { ...config.headers, 'If-None-Match': lastCachedResult.etag };
+      }
     }
-  }
-  return response;
-}
+    return config;
+  };
 
-function responseErrorInterceptor(error: AxiosError) {
-  if (error.response.status === 304) {
-    const getCachedResult = getCacheByAxiosConfig(error.response.config);
-    if (!getCachedResult) {
-      return Promise.reject(error);
+  const responseInterceptor = (response: AxiosResponse) => {
+    if (isCacheableMethod(response.config)) {
+      const responseETAG = getHeaderCaseInsensitive('etag', response.headers);
+      if (responseETAG) {
+        options.cache.set(getUUIDByAxiosConfig(response.config), responseETAG, response.data);
+      }
     }
-    const newResponse = error.response;
-    newResponse.status = 200;
-    newResponse.data = getCachedResult.value;
-    return Promise.resolve(newResponse);
-  }
-  return Promise.reject(error);
-}
+    return response;
+  };
 
-export function resetCache() {
-  Cache.reset();
-}
+  const responseErrorInterceptor = (error: AxiosError) => {
+    if (error.response.status === 304) {
+      const getCachedResult = options.cache.get(getUUIDByAxiosConfig(config));
+      if (!getCachedResult) {
+        return Promise.reject(error);
+      }
+      const newResponse = error.response;
+      newResponse.status = 200;
+      newResponse.data = getCachedResult.value;
+      return Promise.resolve(newResponse);
+    }
+    return Promise.reject(error);
+  };
 
-export default function axiosETAGCache(config?: AxiosRequestConfig) {
   const instance = axios.create(config);
   instance.interceptors.request.use(requestInterceptor);
   instance.interceptors.response.use(responseInterceptor, responseErrorInterceptor);

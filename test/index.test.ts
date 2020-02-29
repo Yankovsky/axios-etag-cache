@@ -1,5 +1,7 @@
-import axiosETAGCache, { resetCache } from '../src';
+import axiosETAGCache from '../src';
 import * as nock from 'nock';
+import { AxiosETAGOptions, CacheModule } from '../src/types';
+import { BaseCache } from '../src/BaseCache';
 
 const USERS = [{ uuid: '123', name: 'John' }];
 const TEST_ETAG_0 = '123ABC';
@@ -27,6 +29,8 @@ function replyIfNotEtagHeaders() {
   }
   return [404, 'ETAG headers found'];
 }
+
+const dummyCache: CacheModule = new BaseCache();
 
 describe('Index', () => {
   test('should do the second request with a If-none-match header', done => {
@@ -80,8 +84,9 @@ describe('Index', () => {
   test('should do second request without etag if cache was reset', done => {
     const call1 = nock(BASE_PATH).get('/users').reply(200, USERS, { Etag: TEST_ETAG_0 });
     const call2 = nock(BASE_PATH).get('/users').reply(200, replyIfNotEtagHeaders);
-    axiosETAGCache().get('http://api.example.com/users').then(() => {
-      resetCache();
+    const options: AxiosETAGOptions = { cache: dummyCache };
+    axiosETAGCache({}, options).get('http://api.example.com/users').then(() => {
+      options.cache.reset();
       axiosETAGCache().get('http://api.example.com/users').then(() => {
         expect(call1.isDone()).toBeTruthy();
         expect(call2.isDone()).toBeTruthy();
