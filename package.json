@@ -1,6 +1,6 @@
 {
   "name": "@yankovsky/axios-etag-cache",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Axios etag interceptor to enable If-None-Match request with ETAG support",
   "keywords": [
     "axios",
